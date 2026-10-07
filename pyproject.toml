@@ -1,0 +1,22 @@
+[project]
+name = "sidenotes"
+version = "0.1.0"
+description = "Out-of-code notes shown on hover, served over LSP."
+requires-python = ">=3.10"
+dependencies = ["pygls>=2,<3"]
+
+[project.scripts]
+sidenotes-lsp = "sidenotes.server:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.ruff]
+src = ["."]
+
+[tool.ruff.lint]
+extend-select = ["E501"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
