@@ -1,6 +1,6 @@
 import pytest
 
-from sidenotes.notes import add_note, locate, new_note, parse
+from sidenotes.notes import add_note, locate, new_note, parse, remove_note
 
 PARSE_CASES = {
     "empty sidecar": ("", {}),
@@ -94,6 +94,39 @@ def test_new_note_not_offered_on_blank_line(line):
 
 def test_new_note_not_offered_on_annotated_line():
     assert new_note({"x = 1": "why x"}, "    x = 1\n") is None
+
+
+REMOVE_CASES = {
+    "middle note": ("@@ a\nx\n@@ b\ny\n@@ c\nz", "b", "@@ a\nx\n@@ c\nz"),
+    "last note": ("@@ a\nx\n@@ b\ny", "b", "@@ a\nx"),
+    "only note": ("@@ a\nx\n", "a", ""),
+    "other notes keep their blank lines": (
+        "@@ k\np1\n\np2\n@@ a\nx\n\ny",
+        "a",
+        "@@ k\np1\n\np2",
+    ),
+    "text before the first anchor is kept": ("intro\n@@ a\nx", "a", "intro"),
+    "same anchor twice, both removed": ("@@ a\nx\n@@ b\ny\n@@ a\nz", "a", "@@ b\ny"),
+    "unknown anchor changes nothing": ("@@ a\nx\n@@ b\ny", "c", "@@ a\nx\n@@ b\ny"),
+    "anchor line with extra spaces": ("@@   a  \nx\n@@ b\ny", "a", "@@ b\ny"),
+    "stray empty anchor goes with its note": (
+        "@@ k\nbody\n@@ a\nx\n@@ \ny\n@@ b\nz",
+        "a",
+        "@@ k\nbody\n@@ b\nz",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("text", "anchor", "expected"), REMOVE_CASES.values(), ids=REMOVE_CASES.keys()
+)
+def test_remove_note(text, anchor, expected):
+    result = remove_note(text, anchor)
+
+    assert result == expected
+    remaining = parse(text)
+    remaining.pop(anchor, None)
+    assert parse(result) == remaining
 
 
 def write(path, text):

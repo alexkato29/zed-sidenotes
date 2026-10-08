@@ -76,6 +76,29 @@ def new_note(notes: dict[str, str], line: str) -> str | None:
         return ANCHOR_PREFIX + line + "\n\n"
 
 
+def remove_note(text: str, anchor: str) -> str:
+    """Removes a note from sidecar text.
+
+    Args:
+        text: Full contents of a sidecar file.
+        anchor: Anchor of the note to remove, already stripped.
+
+    Returns:
+        The sidecar text without that note's anchor line and body.
+    """
+    skipping = False
+    kept = []
+    for line in text.split("\n"):
+        if line.startswith(ANCHOR_PREFIX):
+            curr_anchor = line[len(ANCHOR_PREFIX):].strip()
+            if curr_anchor:
+                skipping = curr_anchor == anchor
+        if not skipping:
+            kept.append(line)
+
+    return "\n".join(kept)
+
+
 def sidecar_for(root: Path, source: Path) -> Path | None:
     """Locates where notes for a source file live.
 

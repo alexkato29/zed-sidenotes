@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import threading
 
 import pytest
 
@@ -15,6 +16,7 @@ class Client:
             stdout=subprocess.PIPE,
         )
         self.last_id = 0
+        self.unclaimed = []
         self.request(
             "initialize",
             {"processId": None, "rootUri": root.as_uri(), "capabilities": {}},
@@ -28,17 +30,34 @@ class Client:
         self.proc.stdin.write(b"Content-Length: %d\r\n\r\n%s" % (len(body), body))
         self.proc.stdin.flush()
 
+    def read(self):
+        length = 0
+        while line := self.proc.stdout.readline().strip():
+            if line.lower().startswith(b"content-length:"):
+                length = int(line.split(b":")[1])
+        return json.loads(self.proc.stdout.read(length))
+
     def request(self, method, params):
         self.last_id += 1
         self.notify(method, params, id=self.last_id)
         while True:
-            length = 0
-            while line := self.proc.stdout.readline().strip():
-                if line.lower().startswith(b"content-length:"):
-                    length = int(line.split(b":")[1])
-            message = json.loads(self.proc.stdout.read(length))
+            message = self.read()
             if message.get("id") == self.last_id:
                 return message["result"]
+            self.unclaimed.append(message)
+
+    def expect(self, method):
+        """Waits for the server to send a request or notification of its own.
+
+        Also accepts one that arrived earlier while a request awaited its response.
+        """
+        for message in self.unclaimed:
+            if message.get("method") == method:
+                return message.get("params")
+        while True:
+            message = self.read()
+            if message.get("method") == method:
+                return message.get("params")
 
     def open(self, path):
         self.notify(
@@ -57,7 +76,11 @@ class Client:
 @pytest.fixture
 def client(tmp_path):
     client = Client(tmp_path)
+    watchdog = threading.Timer(10, client.proc.kill)
+    watchdog.daemon = True
+    watchdog.start()
     yield client
+    watchdog.cancel()
     client.proc.kill()
 
 
@@ -85,7 +108,7 @@ def test_hover_shows_note_with_link_to_sidecar(client, tmp_path):
     value = hover(client, source, line=1)["contents"]["value"]
 
     assert value.startswith("why y")
-    assert f"[edit note]({sidecar.as_uri()})" in value
+    assert f"[Edit Note]({sidecar.as_uri()})" in value
 
 
 def test_hover_on_line_without_note(client, tmp_path):
@@ -145,6 +168,21 @@ def test_no_markers_without_sidecar(client, tmp_path):
     assert markers(client, source, 0, 1) == []
 
 
+def test_markers_refresh_when_a_sidecar_changes_on_disk(client, tmp_path):
+    registration = client.expect("client/registerCapability")["registrations"][0]
+    assert registration["method"] == "workspace/didChangeWatchedFiles"
+    assert registration["registerOptions"]["watchers"] == [
+        {"globPattern": "**/.sidenotes/**/*.md"}
+    ]
+
+    sidecar = (tmp_path / ".sidenotes" / "demo.py.md").as_uri()
+    client.notify(
+        "workspace/didChangeWatchedFiles", {"changes": [{"uri": sidecar, "type": 3}]}
+    )
+
+    client.expect("workspace/inlayHint/refresh")
+
+
 def actions(client, source, line):
     client.open(source)
     position = {"line": line, "character": 0}
@@ -178,11 +216,31 @@ def test_add_sidenote_creates_sidecar_and_inserts_anchor_at_top(client, tmp_path
     ]
 
 
-def test_add_sidenote_not_offered_on_annotated_line(client, tmp_path):
-    source = write(tmp_path / "demo.py", "x = 1\n")
+def test_annotated_line_offers_delete_instead_of_add(client, tmp_path):
+    source = write(tmp_path / "demo.py", "    x = 1\n")
     write(tmp_path / ".sidenotes" / "demo.py.md", "@@ x = 1\nwhy x\n")
 
-    assert actions(client, source, line=0) == []
+    [action] = actions(client, source, line=0)
+
+    assert action["title"] == "Delete sidenote"
+    assert action["command"]["command"] == "sidenotes.delete"
+    assert action["command"]["arguments"] == [source.as_uri(), "x = 1"]
+
+
+def test_delete_command_removes_note_from_disk_and_refreshes(client, tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\ny = 2\n")
+    sidecar = write(
+        tmp_path / ".sidenotes" / "demo.py.md", "@@ x = 1\nwhy x\n@@ y = 2\nwhy y\n"
+    )
+    client.open(source)
+
+    client.request(
+        "workspace/executeCommand",
+        {"command": "sidenotes.delete", "arguments": [source.as_uri(), "x = 1"]},
+    )
+
+    assert sidecar.read_text() == "@@ y = 2\nwhy y\n"
+    client.expect("workspace/inlayHint/refresh")
 
 
 def test_add_sidenote_not_offered_on_blank_line(client, tmp_path):
