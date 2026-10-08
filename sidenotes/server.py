@@ -1,11 +1,11 @@
+import sys
 from pathlib import Path
 
 from lsprotocol import types
 from pygls.lsp.server import LanguageServer
 
-from sidenotes.notes import locate, new_note, parse
+from sidenotes.notes import add_note, locate, new_note, parse, sidecar_for
 
-NOTES_DIR = ".sidenotes"
 MARKER = " 📝"
 
 server = LanguageServer("sidenotes", "0.1.0")
@@ -21,10 +21,9 @@ def sidecar_path(uri: str) -> Path | None:
         Path to the sidecar file, or None if the source file is outside the project.
     """
     root = server.workspace.root_path
-    source = Path(server.workspace.get_text_document(uri).path)
-    if root is None or not source.is_relative_to(root):
+    if root is None:
         return None
-    return Path(root, NOTES_DIR, f"{source.relative_to(root)}.md")
+    return sidecar_for(Path(root), Path(server.workspace.get_text_document(uri).path))
 
 
 def read_notes(path: Path | None) -> dict[str, str]:
@@ -89,8 +88,27 @@ def code_actions(params: types.CodeActionParams) -> list[types.CodeAction]:
     return [types.CodeAction(title="Add sidenote", edit=edit)]
 
 
+def add_command(root: str, source: str, row: str) -> None:
+    """Adds a note from the command line for editor tasks bound to a key.
+
+    Prints the sidecar location as path:line, pointing at the empty line to type on.
+
+    Args:
+        root: Project root directory.
+        source: Absolute path to the source file.
+        row: 1-based line number as the editor report it.
+    """
+    path = add_note(Path(root), Path(source), int(row) - 1)
+    if path is None:
+        sys.exit(1)
+    print(f"{path}:2")
+
+
 def main() -> None:
-    server.start_io()
+    if sys.argv[1:2] == ["add"]:
+        add_command(*sys.argv[2:])
+    else:
+        server.start_io()
 
 
 if __name__ == "__main__":

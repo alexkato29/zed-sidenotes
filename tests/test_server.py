@@ -195,3 +195,32 @@ def test_add_sidenote_not_offered_outside_project(client, tmp_path_factory):
     source = write(tmp_path_factory.mktemp("elsewhere") / "demo.py", "x = 1\n")
 
     assert actions(client, source, line=0) == []
+
+
+def run_add(root, source, row):
+    return subprocess.run(
+        [sys.executable, "-m", "sidenotes.server", "add", root, source, str(row)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_add_command_takes_one_based_row_and_prints_where_to_type(tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\ny = 2\n")
+
+    result = run_add(tmp_path, source, row=2)
+
+    sidecar = tmp_path / ".sidenotes" / "demo.py.md"
+    assert sidecar.read_text() == "@@ y = 2\n\n"
+    assert result.stdout == f"{sidecar}:2\n"
+    assert result.returncode == 0
+
+
+def test_add_command_fails_quietly_when_declined(tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\n\n")
+
+    result = run_add(tmp_path, source, row=2)
+
+    assert result.stdout == ""
+    assert result.returncode == 1

@@ -1,4 +1,7 @@
+from pathlib import Path
+
 ANCHOR_PREFIX = "@@ "
+NOTES_DIR = ".sidenotes"
 
 
 def parse(text: str) -> dict[str, str]:
@@ -71,3 +74,42 @@ def new_note(notes: dict[str, str], line: str) -> str | None:
         return None
     else:
         return ANCHOR_PREFIX + line + "\n\n"
+
+
+def sidecar_for(root: Path, source: Path) -> Path | None:
+    """Locates where notes for a source file live.
+
+    Args:
+        root: Project root directory.
+        source: Absolute path to the source file.
+
+    Returns:
+        Path to the sidecar file, or None if the source file is outside the project.
+    """
+    if not source.is_relative_to(root):
+        return None
+    return root / NOTES_DIR / f"{source.relative_to(root)}.md"
+
+
+def add_note(root: Path, source: Path, row: int) -> Path | None:
+    """Starts a note in the sidecar on disk for one line of a source file.
+
+    Args:
+        root: Project root directory.
+        source: Absolute path to the source file.
+        row: 0-based line number in the source file.
+
+    Returns:
+        Path to the sidecar file, or None if no note was added.
+    """
+    path = sidecar_for(root, source)
+    lines = source.read_text().splitlines()
+    if path is None or row >= len(lines):
+        return None
+    existing = path.read_text() if path.is_file() else ""
+    text = new_note(parse(existing), lines[row])
+    if text is None:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + existing)
+    return path

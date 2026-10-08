@@ -1,6 +1,6 @@
 import pytest
 
-from sidenotes.notes import locate, new_note, parse
+from sidenotes.notes import add_note, locate, new_note, parse
 
 PARSE_CASES = {
     "empty sidecar": ("", {}),
@@ -94,3 +94,44 @@ def test_new_note_not_offered_on_blank_line(line):
 
 def test_new_note_not_offered_on_annotated_line():
     assert new_note({"x = 1": "why x"}, "    x = 1\n") is None
+
+
+def write(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
+
+
+def test_add_note_creates_sidecar(tmp_path):
+    source = write(tmp_path / "src" / "demo.py", "x = 1\n    y = 2\n")
+
+    sidecar = add_note(tmp_path, source, row=1)
+
+    assert sidecar == tmp_path / ".sidenotes" / "src" / "demo.py.md"
+    assert sidecar.read_text() == "@@ y = 2\n\n"
+
+
+def test_add_note_goes_above_existing_notes(tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\ny = 2\n")
+    sidecar = write(tmp_path / ".sidenotes" / "demo.py.md", EXISTING)
+
+    assert add_note(tmp_path, source, row=0) == sidecar
+    assert sidecar.read_text() == "@@ x = 1\n\n" + EXISTING
+
+
+@pytest.mark.parametrize("row", [1, 2, 3], ids=["annotated", "blank", "past the end"])
+def test_add_note_declined_leaves_sidecar_untouched(tmp_path, row):
+    source = write(tmp_path / "demo.py", "x = 1\ny = 2\n\n")
+    sidecar = write(tmp_path / ".sidenotes" / "demo.py.md", EXISTING)
+
+    assert add_note(tmp_path, source, row) is None
+    assert sidecar.read_text() == EXISTING
+
+
+def test_add_note_declined_outside_project(tmp_path):
+    source = write(tmp_path / "elsewhere" / "demo.py", "x = 1\n")
+    root = tmp_path / "project"
+    root.mkdir()
+
+    assert add_note(root, source, row=0) is None
+    assert not (root / ".sidenotes").exists()
