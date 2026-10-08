@@ -105,3 +105,93 @@ def test_hover_on_file_outside_project(client, tmp_path_factory):
     source = write(tmp_path_factory.mktemp("elsewhere") / "demo.py", "x = 1\n")
 
     assert hover(client, source, line=0) is None
+
+
+def markers(client, source, first_line, last_line):
+    client.open(source)
+    hints = client.request(
+        "textDocument/inlayHint",
+        {
+            "textDocument": {"uri": source.as_uri()},
+            "range": {
+                "start": {"line": first_line, "character": 0},
+                "end": {"line": last_line, "character": 0},
+            },
+        },
+    )
+    return [
+        (hint["position"]["line"], hint["position"]["character"], hint["label"])
+        for hint in hints
+    ]
+
+
+def test_marker_at_end_of_every_annotated_line(client, tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\ny = 2\n    x = 1\n")
+    write(tmp_path / ".sidenotes" / "demo.py.md", "@@ x = 1\nwhy x\n")
+
+    assert markers(client, source, 0, 3) == [(0, 5, " 📝"), (2, 9, " 📝")]
+
+
+def test_markers_limited_to_requested_range(client, tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\ny = 2\n    x = 1\n")
+    write(tmp_path / ".sidenotes" / "demo.py.md", "@@ x = 1\nwhy x\n")
+
+    assert markers(client, source, 1, 3) == [(2, 9, " 📝")]
+
+
+def test_no_markers_without_sidecar(client, tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\n")
+
+    assert markers(client, source, 0, 1) == []
+
+
+def actions(client, source, line):
+    client.open(source)
+    position = {"line": line, "character": 0}
+    return client.request(
+        "textDocument/codeAction",
+        {
+            "textDocument": {"uri": source.as_uri()},
+            "range": {"start": position, "end": position},
+            "context": {"diagnostics": []},
+        },
+    )
+
+
+def test_add_sidenote_creates_sidecar_and_inserts_anchor_at_top(client, tmp_path):
+    source = write(tmp_path / "src" / "demo.py", "x = 1\n    y = 2\n")
+    sidecar = (tmp_path / ".sidenotes" / "src" / "demo.py.md").as_uri()
+
+    [action] = actions(client, source, line=1)
+    create, insert = action["edit"]["documentChanges"]
+
+    assert action["title"] == "Add sidenote"
+    assert create == {
+        "kind": "create",
+        "uri": sidecar,
+        "options": {"ignoreIfExists": True},
+    }
+    assert insert["textDocument"]["uri"] == sidecar
+    top = {"line": 0, "character": 0}
+    assert insert["edits"] == [
+        {"range": {"start": top, "end": top}, "newText": "@@ y = 2\n\n"}
+    ]
+
+
+def test_add_sidenote_not_offered_on_annotated_line(client, tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\n")
+    write(tmp_path / ".sidenotes" / "demo.py.md", "@@ x = 1\nwhy x\n")
+
+    assert actions(client, source, line=0) == []
+
+
+def test_add_sidenote_not_offered_on_blank_line(client, tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\n\n")
+
+    assert actions(client, source, line=1) == []
+
+
+def test_add_sidenote_not_offered_outside_project(client, tmp_path_factory):
+    source = write(tmp_path_factory.mktemp("elsewhere") / "demo.py", "x = 1\n")
+
+    assert actions(client, source, line=0) == []

@@ -51,3 +51,23 @@ def locate(notes: dict[str, str], lines: list[str]) -> dict[int, str]:
         if stripped in notes:
             mapping[idx] = notes[stripped]
     return mapping
+
+
+def new_note(notes: dict[str, str], line: str) -> str | None:
+    """Builds the sidecar text that starts a note for a source line.
+
+    The server inserts the returned text at the very top of the sidecar above any notes
+    already there.
+
+    Args:
+        notes: Dict mapping each anchor to its body, as returned by parse.
+        line: The source line under the cursor. May be indented and end with a newline.
+
+    Returns:
+        Text to insert, or None if no note should be offered for this line.
+    """
+    line = line.strip()
+    if not line or line in notes:
+        return None
+    else:
+        return ANCHOR_PREFIX + line + "\n\n"

@@ -1,6 +1,6 @@
 import pytest
 
-from sidenotes.notes import locate, parse
+from sidenotes.notes import locate, new_note, parse
 
 PARSE_CASES = {
     "empty sidecar": ("", {}),
@@ -68,3 +68,29 @@ LOCATE_CASES = {
 )
 def test_locate(notes, lines, expected):
     assert locate(notes, lines) == expected
+
+
+EXISTING = "@@ y = 2\nwhy y\n"
+
+
+def test_new_note_parses_and_matches_its_line():
+    line = "    x = 1\n"
+    sidecar = new_note(parse(EXISTING), line) + EXISTING
+
+    assert parse(sidecar) == {"x = 1": "", "y = 2": "why y"}
+    assert locate(parse(sidecar), [line]) == {0: ""}
+
+
+def test_new_note_leaves_an_empty_line_for_the_body():
+    sidecar = new_note(parse(EXISTING), "x = 1\n") + EXISTING
+
+    assert sidecar.split("\n")[:3] == ["@@ x = 1", "", "@@ y = 2"]
+
+
+@pytest.mark.parametrize("line", ["", "\n", "   \n"])
+def test_new_note_not_offered_on_blank_line(line):
+    assert new_note({}, line) is None
+
+
+def test_new_note_not_offered_on_annotated_line():
+    assert new_note({"x = 1": "why x"}, "    x = 1\n") is None
