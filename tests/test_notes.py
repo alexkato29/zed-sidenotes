@@ -1,6 +1,13 @@
 import pytest
 
-from sidenotes.notes import add_note, locate, new_note, parse, remove_note
+from sidenotes.notes import (
+    add_note,
+    anchor_row,
+    locate,
+    new_note,
+    parse,
+    remove_note,
+)
 
 PARSE_CASES = {
     "empty sidecar": ("", {}),
@@ -127,6 +134,26 @@ def test_remove_note(text, anchor, expected):
     remaining = parse(text)
     remaining.pop(anchor, None)
     assert parse(result) == remaining
+
+
+ANCHOR_ROW_CASES = {
+    "first note": ("@@ a\nx\n@@ b\ny", "a", 0),
+    "later note": ("@@ a\nx\n\n@@ b\ny", "b", 3),
+    "after text before the first anchor": ("intro\n@@ a\nx", "a", 1),
+    "anchor line with extra spaces": ("@@   a  \nx", "a", 0),
+    "same anchor twice, the one parse keeps": ("@@ a\nfirst\n@@ a\nsecond", "a", 2),
+    "body line equal to the anchor text is not an anchor": ("@@ b\na\n@@ a\nx", "a", 2),
+    "unknown anchor": ("@@ a\nx", "b", None),
+}
+
+
+@pytest.mark.parametrize(
+    ("text", "anchor", "expected"),
+    ANCHOR_ROW_CASES.values(),
+    ids=ANCHOR_ROW_CASES.keys(),
+)
+def test_anchor_row(text, anchor, expected):
+    assert anchor_row(text, anchor) == expected
 
 
 def write(path, text):

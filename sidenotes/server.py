@@ -7,6 +7,7 @@ from pygls.lsp.server import LanguageServer
 from sidenotes.notes import (
     NOTES_DIR,
     add_note,
+    anchor_row,
     locate,
     new_note,
     parse,
@@ -51,10 +52,18 @@ def hover(params: types.HoverParams) -> types.Hover | None:
     """Shows the note for the hovered line with a link to edit it."""
     uri = params.text_document.uri
     path = sidecar_path(uri)
-    body = notes_by_line(uri).get(params.position.line)
-    if path is None or body is None:
+    lines = server.workspace.get_text_document(uri).lines
+    row = params.position.line
+    if path is None or not path.is_file() or row >= len(lines):
         return None
-    value = f"{body}\n\n---\n[Edit Note]({path.as_uri()})"
+    text = path.read_text()
+    anchor = lines[row].strip()
+    body = parse(text).get(anchor)
+    note_row = anchor_row(text, anchor)
+    if body is None or note_row is None:
+        return None
+    # Editors read the fragment as a 1-based line and open the sidecar there.
+    value = f"{body}\n\n---\n[Edit Note]({path.as_uri()}#L{note_row + 1})"
     return types.Hover(contents=types.MarkupContent(types.MarkupKind.Markdown, value))
 
 

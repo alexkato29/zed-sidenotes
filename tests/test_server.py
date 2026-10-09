@@ -108,7 +108,18 @@ def test_hover_shows_note_with_link_to_sidecar(client, tmp_path):
     value = hover(client, source, line=1)["contents"]["value"]
 
     assert value.startswith("why y")
-    assert f"[Edit Note]({sidecar.as_uri()})" in value
+    assert f"[Edit Note]({sidecar.as_uri()}#L1)" in value
+
+
+def test_edit_link_points_at_the_note_inside_the_sidecar(client, tmp_path):
+    source = write(tmp_path / "demo.py", "x = 1\ny = 2\n")
+    sidecar = write(
+        tmp_path / ".sidenotes" / "demo.py.md", "@@ x = 1\nwhy x\n\n@@ y = 2\nwhy y\n"
+    )
+
+    value = hover(client, source, line=1)["contents"]["value"]
+
+    assert f"[Edit Note]({sidecar.as_uri()}#L4)" in value
 
 
 def test_hover_on_line_without_note(client, tmp_path):

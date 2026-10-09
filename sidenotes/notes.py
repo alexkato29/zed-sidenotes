@@ -99,6 +99,26 @@ def remove_note(text: str, anchor: str) -> str:
     return "\n".join(kept)
 
 
+def anchor_row(text: str, anchor: str) -> int | None:
+    """Finds the sidecar line that holds a note's anchor.
+
+    Args:
+        text: Full contents of a sidecar file.
+        anchor: Anchor of the note to find, already stripped.
+
+    Returns:
+        0-based line number of the anchor line, or None if the note is not there. When
+        the anchor appears more than once this is the last one, the note parse keeps.
+    """
+    row = None
+    for i, line in enumerate(text.split("\n")):
+        if not line.startswith(ANCHOR_PREFIX):
+            continue
+        if line[len(ANCHOR_PREFIX):].strip() == anchor:
+            row = i
+    return row
+
+
 def sidecar_for(root: Path, source: Path) -> Path | None:
     """Locates where notes for a source file live.
 
